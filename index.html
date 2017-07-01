@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<style>
+
+body {
+  background-color: #fff1e0;
+}
+  
+.land {
+ 	fill: white;
+  opacity: .5;
+  stroke: #4f2291;
+  stroke-opacity: 1;
+}
+
+.countries path {
+  stroke: #4f2291;  
+  stroke-linejoin: round;
+  stroke-width:.5;
+  fill: #4f2291;
+  opacity: .1;
+  pointer-events:none;
+}
+  
+.lines path {
+  fill: none;
+  stroke: #4f2291;
+  stroke-opacity: 0.3;
+  stroke-dasharray: 5,5; 
+}
+  
+circle {
+  stroke: #4f2291;
+}
+  
+.graticule {
+  fill: none;
+  stroke: #4f2291;
+  stroke-width:.5;
+  opacity:.2;
+}
+
+.labels {
+  font: 8px sans-serif;
+  fill: black;
+  opacity: 1;
+  cursor: pointer;
+}
+
+.noclicks {
+  pointer-events:none;
+}
+
+.point {
+  opacity:.6;
+}
+</style>
+
+<body>
+<script src="http://d3js.org/d3.v4.min.js"></script>
+<script src="http://d3js.org/queue.v1.min.js"></script>
+<script src="http://d3js.org/topojson.v0.min.js"></script>
+
+<script>
+// Lots of code from:
+//  http://bl.ocks.org/3757125
+//  http://bl.ocks.org/3795040
+
+d3.select(window)
+    .on("mousemove", mousemove)
+    .on("mouseup", mouseup);
+
+var width = 960,
+    height = 500;
+
+var proj = d3.geoOrthographic()
+    .scale(230)
+    .translate([width / 2, height / 2])
+// change this to 180 for transparent globe
+    .clipAngle(90);
+
+
+var path = d3.geoPath().projection(proj).pointRadius(1.5);
+
+var graticule = d3.geoGraticule();
+  
+var london = [-0.118667702475932, 51.5019405883275];
+  
+var lineToLondon = function(d) {
+  return path({"type": "LineString", "coordinates": [london, d.geometry.coordinates]});
+}
+
+function stripWhitespace(str) {
+  return str.replace(" ", "");
+}
+
+var svg = d3.select("body").append("svg")
+            .attr("width", width)
+            .attr("height", height)
+            .on("mousedown", mousedown);
+
+queue()
+    .defer(d3.json, "world-110m.json")
+    .defer(d3.json, "destinations.json")
+    .await(ready);
+
+function ready(error, world, places) {
+    svg.append("circle")
+        .attr("cx", width / 2).attr("cy", height / 2)
+        .attr("r", proj.scale())
+        .attr("class", "noclicks")
+    		.attr("fill", "none");
+    
+    svg.append("path")
+        .datum(topojson.object(world, world.objects.land))
+        .attr("class", "land")
+        .attr("d", path);
+
+    svg.append("path")
+        .datum(graticule)
+        .attr("class", "graticule noclicks")
+        .attr("d", path);
+
+    svg.append("g").attr("class","points")
+        .selectAll("text").data(places.features)
+      .enter().append("path")
+        .attr("class", "point")
+        .attr("d", path);
+  
+  	svg.append("g").attr("class","lines")
+        .selectAll(".lines").data(places.features)
+      .enter().append("path")
+        .attr("class", "lines")
+    		.attr("id", function(d) { return stripWhitespace(d.properties.name)})
+        .attr("d", function(d) {
+      		return lineToLondon(d);
+    		});
+
+
+    svg.append("g").attr("class","labels")
+        .selectAll("text").data(places.features)
+      .enter().append("text")
+      .attr("class", "label")
+      .text(function(d) { return d.properties.name })
+      .on("mouseover", function(d) {
+      	var distance = Math.round(d3.geoDistance(d.geometry.coordinates, london) * 6371);
+      	d3.select("g.info").select("text.distance").text("Distance from London: ~" + distance + "km");
+      	var name = stripWhitespace(d.properties.name);
+      	d3.select("g.lines").select("#" + name).style("stroke-opacity", 1)
+    	})
+    	.on("mouseout", function(d) {
+      	var name = stripWhitespace(d.properties.name);
+      	d3.select("g.lines").select("#" + name).style("stroke-opacity", 0.3)
+        d3.select("g.info").select("text.distance").text("Distance from London: Hover Over A Location");
+    	});
+  
+    svg.append("g").attr("class","countries")
+      .selectAll("path")
+        .data(topojson.object(world, world.objects.countries).geometries)
+      .enter().append("path")
+        .attr("d", path); 
+
+    position_labels();
+  
+  	svg.append("g").attr("class", "info")
+      .append("text")
+    	.attr("class", "distance")
+      .attr("x", width / 20)
+      .attr("y", height * 0.9)
+    	.attr("text-anchor", "start")
+    	.style("font-size", "12px")
+      .text("Distance from London: Hover Over A Locations");  
+  
+  	proj.rotate([39.666666666666664, -30]);
+  	refresh();
+}
+
+
+function position_labels() {
+  var centerPos = proj.invert([width/2,height/2]);
+
+  svg.selectAll(".label")
+    .attr("text-anchor",function(d) {
+      var x = proj(d.geometry.coordinates)[0];
+      return x < width/2-20 ? "end" :
+             x < width/2+20 ? "middle" :
+             "start"
+    })
+    .attr("transform", function(d) {
+      var loc = proj(d.geometry.coordinates),
+        x = loc[0],
+        y = loc[1];
+      var offset = x < width/2 ? -5 : 5;
+      return "translate(" + (x+offset) + "," + (y-2) + ")"
+    })
+    .style("display",function(d) {
+      var d = d3.geoDistance(d.geometry.coordinates, centerPos);
+      return (d > 1.57) ? 'none' : 'inline';
+    })
+    
+}
+
+
+// modified from http://bl.ocks.org/1392560
+var m0, o0;
+function mousedown() {
+  m0 = [d3.event.pageX, d3.event.pageY];
+  o0 = proj.rotate();
+  d3.event.preventDefault();
+}
+function mousemove() {
+  if (m0) {
+    var m1 = [d3.event.pageX, d3.event.pageY]
+      , o1 = [o0[0] + (m1[0] - m0[0]) / 6, o0[1] + (m0[1] - m1[1]) / 6];
+    o1[1] = o1[1] > 30  ? 30  :
+            o1[1] < -30 ? -30 :
+            o1[1];
+    proj.rotate(o1);
+    refresh();
+  }
+}
+function mouseup() {
+  if (m0) {
+    mousemove();
+    m0 = null;
+  }
+}
+
+function refresh() {
+  svg.selectAll(".land").attr("d", path);
+  svg.selectAll(".countries path").attr("d", path);
+  svg.selectAll(".graticule").attr("d", path);
+  svg.selectAll(".point").attr("d", path);
+  svg.selectAll(".lines").attr("d", function(d) {
+    if (d) {
+      return lineToLondon(d);
+    }
+   });
+  position_labels();
+}
+
+</script>
